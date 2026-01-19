@@ -38,7 +38,7 @@ ALERT_TITLES: dict[str, str] = {
 class ThemeConfig:
     """Configuration class for theme settings loaded from themes.ini."""
 
-    def __init__(self, theme_name: str = "IEE", config_path: Optional[str] = None):
+    def __init__(self, theme_name: str = "Standard", config_path: Optional[str] = None):
         self.theme_name = theme_name
         self.config = configparser.ConfigParser()
 
@@ -49,7 +49,7 @@ class ThemeConfig:
         self.email = "iee@tugraz.at"
         self.website = "www.iee.tugraz.at"
         self.slogan = "SCIENCE · PASSION · TECHNOLOGY"
-        self.accent_color = "#008080"
+        self.accent_color = "#000000"
         self.heading_line_color = "#d1d9e0"
         self.logo_left = "Logo_IEE.png"
         self.logo_right = "Logo_TuGraz.png"
@@ -569,7 +569,7 @@ def main() -> None:
         "--iee", action="store_true", help="Add IEE/TU Graz header and footer"
     )
     parser.add_argument(
-        "--theme", default="IEE", help="Theme name from themes.ini"
+        "--theme", default="Standard", help="Theme name from themes.ini"
     )
     parser.add_argument("--config", default="themes.ini", help="Path to themes.ini config file")
     args = parser.parse_args()
