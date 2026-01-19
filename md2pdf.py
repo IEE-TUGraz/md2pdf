@@ -3,13 +3,19 @@ Markdown to PDF converter with GitHub styling.
 
 Converts Markdown files to PDF preserving GitHub-flavored styling,
 including support for GitHub-specific alerts (NOTE, TIP, IMPORTANT, WARNING, CAUTION).
+Optionally supports IEE (TU Graz) institutional branding with header/footer.
+Configuration via themes.ini file.
 """
 
 import argparse
+import base64
+import configparser
 import os
 import re
 import subprocess
 import sys
+from pathlib import Path
+from typing import Optional
 
 # SVG icons for GitHub alerts
 ALERT_ICONS: dict[str, str] = {
@@ -29,17 +35,64 @@ ALERT_TITLES: dict[str, str] = {
 }
 
 
+class ThemeConfig:
+    """Configuration class for theme settings loaded from themes.ini."""
+
+    def __init__(self, theme_name: str = "IEE", config_path: Optional[str] = None):
+        self.theme_name = theme_name
+        self.config = configparser.ConfigParser()
+
+        # Default values
+        self.name = "Institute of Electricity Economics and Energy Innovation"
+        self.university = "Graz University of Technology"
+        self.address = "Inffeldgasse 18, 8010 Graz, Austria"
+        self.email = "iee@tugraz.at"
+        self.website = "www.iee.tugraz.at"
+        self.slogan = "SCIENCE · PASSION · TECHNOLOGY"
+        self.accent_color = "#008080"
+        self.heading_line_color = "#d1d9e0"
+        self.logo_left = "Logo_IEE.png"
+        self.logo_right = "Logo_TuGraz.png"
+
+        # Try to load config
+        if config_path is None:
+            config_path = Path(__file__).parent / "themes.ini"
+
+        if Path(config_path).exists():
+            self.config.read(config_path)
+            self._load_theme(theme_name)
+
+    def _load_theme(self, theme_name: str) -> None:
+        """Load theme settings from config file."""
+        if theme_name in self.config:
+            section = self.config[theme_name]
+            self.name = section.get("name", self.name)
+            self.university = section.get("university", self.university)
+            self.address = section.get("address", self.address)
+            self.email = section.get("email", self.email)
+            self.website = section.get("website", self.website)
+            self.slogan = section.get("slogan", self.slogan)
+            self.accent_color = section.get("accent_color", self.accent_color)
+            self.logo_left = section.get("logo_left", self.logo_left)
+            self.logo_right = section.get("logo_right", self.logo_right)
+
+        if "DEFAULT" in self.config:
+            self.heading_line_color = self.config["DEFAULT"].get(
+                "heading_line_color", self.heading_line_color
+            )
+
+
 def install_dependencies() -> None:
     """Checks for required packages and installs them if missing."""
     print("Checking system dependencies...")
-    packages = ["markdown", "playwright"]
-
-    for package in packages:
+    for package in ["markdown", "playwright"]:
         try:
             __import__(package)
         except ImportError:
             print(f"Installing missing package: {package}...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", package]
+            )
 
     try:
         from playwright.sync_api import sync_playwright
@@ -47,308 +100,276 @@ def install_dependencies() -> None:
             p.chromium.launch()
     except Exception:
         print("Installing Playwright browsers...")
-        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+        subprocess.check_call(
+            [sys.executable, "-m", "playwright", "install", "chromium"]
+        )
 
 
-def get_github_css() -> str:
-    """Returns comprehensive CSS for GitHub-style rendering."""
-    return """
-        /* === BASE STYLES === */
-        * {
-            box-sizing: border-box;
-        }
+def load_image_as_base64(image_path: str, script_dir: Path) -> Optional[str]:
+    """
+    Load an image file and return as base64 data URI.
 
-        html, body {
-            margin: 0;
-            padding: 0;
-            background: #ffffff;
-        }
+    Args:
+        image_path: Path to the image file.
+        script_dir: Directory of the script for locating resources.
+    """
+    path = Path(image_path)
+    if not path.is_absolute():
+        path = script_dir / image_path
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    if not path.exists():
+        print(f"Warning: Image not found: {path}")
+        return None
+
+    with open(path, "rb") as f:
+        data = base64.b64encode(f.read()).decode("utf-8")
+
+    ext = path.suffix.lower()
+    mime_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+    }
+    mime = mime_types.get(ext, "image/png")
+    return f"data:{mime};base64,{data}"
+
+
+def get_github_css(heading_line_color: str = "#d1d9e0") -> str:
+    """
+    Returns CSS for GitHub-style rendering.
+
+    Args:
+        heading_line_color: Color for heading underline.
+    """
+    return f"""
+        * {{ box-sizing: border-box; }}
+        html, body {{ margin: 0; padding: 0; background: #fff; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
             font-size: 16px;
             line-height: 1.5;
             color: #1f2328;
-            padding: 45px;
+            padding: 20px 45px;
             max-width: 900px;
-        }
+        }}
 
-        /* === TYPOGRAPHY === */
-        h1, h2, h3, h4, h5, h6 {
+        h1, h2, h3, h4, h5, h6 {{
             margin-top: 24px;
             margin-bottom: 16px;
             font-weight: 600;
             line-height: 1.25;
             color: #1f2328;
-        }
+        }}
+        h1:first-child, h2:first-child, h3:first-child {{ margin-top: 0; }}
+        h1 {{ font-size: 2em; border-bottom: 1px solid {heading_line_color}; padding-bottom: 0.3em; }}
+        h2 {{ font-size: 1.5em; border-bottom: 1px solid {heading_line_color}; padding-bottom: 0.3em; }}
+        h3 {{ font-size: 1.25em; }}
+        h4 {{ font-size: 1em; }}
 
-        h1:first-child, h2:first-child, h3:first-child {
-            margin-top: 0;
-        }
+        p {{ margin-top: 0; margin-bottom: 16px; }}
+        a {{ color: #0969da; text-decoration: none; }}
+        a:hover {{ text-decoration: underline; }}
+        a code {{ color: #0969da; }}
+        strong {{ font-weight: 600; }}
 
-        h1 {
-            font-size: 2em;
-            border-bottom: 1px solid #d1d9e0;
-            padding-bottom: 0.3em;
-        }
-
-        h2 {
-            font-size: 1.5em;
-            border-bottom: 1px solid #d1d9e0;
-            padding-bottom: 0.3em;
-        }
-
-        h3 { font-size: 1.25em; }
-        h4 { font-size: 1em; }
-        h5 { font-size: 0.875em; }
-        h6 { font-size: 0.85em; color: #656d76; }
-
-        p {
-            margin-top: 0;
-            margin-bottom: 16px;
-        }
-
-        a {
-            color: #0969da;
-            text-decoration: none;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-        
-        a code, a tt {
-            color: #0969da;
-        }
-        
-        strong, b {
-            font-weight: 600;
-        }
-
-        em, i {
-            font-style: italic;
-        }
-
-        /* === CODE BLOCKS === */
-        code, tt {
-            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+        code, tt {{
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
             font-size: 85%;
             padding: 0.2em 0.4em;
-            margin: 0;
             background-color: #eff1f3;
             border-radius: 6px;
-            color: #1f2328;
-        }
-
-        pre {
-            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+        }}
+        pre {{
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
             font-size: 85%;
             padding: 16px;
             overflow: auto;
             line-height: 1.45;
             background-color: #f6f8fa;
             border-radius: 6px;
-            margin-top: 0;
             margin-bottom: 16px;
-        }
+        }}
+        pre code {{ padding: 0; background-color: transparent; font-size: 100%; }}
 
-        pre code, pre tt {
-            display: inline;
-            padding: 0;
-            margin: 0;
-            background-color: transparent;
-            border: 0;
-            font-size: 100%;
-            line-height: inherit;
-            word-wrap: normal;
-        }
+        ul, ol {{ padding-left: 2em; margin-bottom: 16px; }}
+        ul {{ list-style-type: disc; }}
+        ol {{ list-style-type: decimal; }}
+        li {{ margin-top: 0.25em; }}
+        ul ul, ol ul {{ list-style-type: circle; margin-top: 0; margin-bottom: 0; }}
 
-        /* === LISTS === */
-        ul, ol {
-            padding-left: 2em;
-            margin-top: 0;
-            margin-bottom: 16px;
-        }
-
-        ul {
-            list-style-type: disc;
-        }
-
-        ol {
-            list-style-type: decimal;
-        }
-
-        li {
-            margin-top: 0.25em;
-        }
-
-        li + li {
-            margin-top: 0.25em;
-        }
-
-        /* Nested lists */
-        ul ul, ol ul {
-            list-style-type: circle;
-            margin-top: 0;
-            margin-bottom: 0;
-        }
-
-        ul ol, ol ol {
-            margin-top: 0;
-            margin-bottom: 0;
-        }
-
-        li > p {
-            margin-top: 16px;
-        }
-
-        li > p:first-child {
-            margin-top: 0;
-        }
-
-        /* === BLOCKQUOTES === */
-        blockquote {
+        blockquote {{
             padding: 0 1em;
             color: #656d76;
             border-left: 0.25em solid #d0d7de;
             margin: 0 0 16px 0;
-            background: transparent;
-        }
+        }}
 
-        blockquote > :first-child {
-            margin-top: 0;
-        }
+        table {{ border-spacing: 0; border-collapse: collapse; margin-bottom: 16px; }}
+        th, td {{ padding: 6px 13px; border: 1px solid #d0d7de; }}
+        th {{ font-weight: 600; background-color: #f6f8fa; }}
+        tr:nth-child(2n) {{ background-color: #f6f8fa; }}
 
-        blockquote > :last-child {
-            margin-bottom: 0;
-        }
+        hr {{ height: 0.25em; padding: 0; margin: 24px 0; background-color: #d0d7de; border: 0; }}
+        img {{ max-width: 100%; }}
 
-        /* === TABLES === */
-        table {
-            border-spacing: 0;
-            border-collapse: collapse;
-            margin-top: 0;
-            margin-bottom: 16px;
-            display: block;
-            width: max-content;
-            max-width: 100%;
-            overflow: auto;
-        }
-
-        th, td {
-            padding: 6px 13px;
-            border: 1px solid #d0d7de;
-        }
-
-        th {
-            font-weight: 600;
-            background-color: #f6f8fa;
-        }
-
-        tr {
-            background-color: #ffffff;
-        }
-
-        tr:nth-child(2n) {
-            background-color: #f6f8fa;
-        }
-
-        /* === HORIZONTAL RULE === */
-        hr {
-            height: 0.25em;
-            padding: 0;
-            margin: 24px 0;
-            background-color: #d0d7de;
-            border: 0;
-        }
-
-        /* === IMAGES === */
-        img {
-            max-width: 100%;
-            box-sizing: content-box;
-        }
-
-        /* === GITHUB ALERTS === */
-        .markdown-alert {
+        .markdown-alert {{
             padding: 8px 16px;
             margin-bottom: 16px;
-            border-left-width: 4px;
-            border-left-style: solid;
+            border-left: 4px solid;
             border-radius: 0 6px 6px 0;
-            display: block;
-        }
-
-        .markdown-alert > :first-child {
-            margin-top: 0;
-        }
-
-        .markdown-alert > :last-child {
-            margin-bottom: 0;
-        }
-
-        .markdown-alert p {
-            margin-bottom: 8px;
-        }
-
-        .markdown-alert p:last-child {
-            margin-bottom: 0;
-        }
-
-        .markdown-alert-title {
+        }}
+        .markdown-alert > :first-child {{ margin-top: 0; }}
+        .markdown-alert > :last-child {{ margin-bottom: 0; }}
+        .markdown-alert-title {{
             display: flex;
             align-items: center;
-            line-height: 1;
             font-weight: 600;
             margin-bottom: 4px;
-        }
+        }}
+        .markdown-alert-title .octicon {{ margin-right: 8px; }}
 
-        .markdown-alert-title .octicon {
-            margin-right: 8px;
-            flex-shrink: 0;
-            display: inline-block;
-            vertical-align: text-bottom;
-        }
+        .markdown-alert-note {{ border-color: #0969da; background-color: #ddf4ff; }}
+        .markdown-alert-note .markdown-alert-title {{ color: #0969da; }}
+        .markdown-alert-note .octicon {{ fill: #0969da; }}
 
-        /* NOTE (Blue) */
-        .markdown-alert-note {
-            border-left-color: #0969da;
-            background-color: #ddf4ff;
-        }
-        .markdown-alert-note .markdown-alert-title { color: #0969da; }
-        .markdown-alert-note .octicon { fill: #0969da; }
+        .markdown-alert-tip {{ border-color: #1a7f37; background-color: #dafbe1; }}
+        .markdown-alert-tip .markdown-alert-title {{ color: #1a7f37; }}
+        .markdown-alert-tip .octicon {{ fill: #1a7f37; }}
 
-        /* TIP (Green) */
-        .markdown-alert-tip {
-            border-left-color: #1a7f37;
-            background-color: #dafbe1;
-        }
-        .markdown-alert-tip .markdown-alert-title { color: #1a7f37; }
-        .markdown-alert-tip .octicon { fill: #1a7f37; }
+        .markdown-alert-important {{ border-color: #8250df; background-color: #fbefff; }}
+        .markdown-alert-important .markdown-alert-title {{ color: #8250df; }}
+        .markdown-alert-important .octicon {{ fill: #8250df; }}
 
-        /* IMPORTANT (Purple) */
-        .markdown-alert-important {
-            border-left-color: #8250df;
-            background-color: #fbefff;
-        }
-        .markdown-alert-important .markdown-alert-title { color: #8250df; }
-        .markdown-alert-important .octicon { fill: #8250df; }
+        .markdown-alert-warning {{ border-color: #9a6700; background-color: #fff8c5; }}
+        .markdown-alert-warning .markdown-alert-title {{ color: #9a6700; }}
+        .markdown-alert-warning .octicon {{ fill: #9a6700; }}
 
-        /* WARNING (Yellow/Orange) */
-        .markdown-alert-warning {
-            border-left-color: #9a6700;
-            background-color: #fff8c5;
-        }
-        .markdown-alert-warning .markdown-alert-title { color: #9a6700; }
-        .markdown-alert-warning .octicon { fill: #9a6700; }
-
-        /* CAUTION (Red) */
-        .markdown-alert-caution {
-            border-left-color: #cf222e;
-            background-color: #ffebe9;
-        }
-        .markdown-alert-caution .markdown-alert-title { color: #cf222e; }
-        .markdown-alert-caution .octicon { fill: #cf222e; }
+        .markdown-alert-caution {{ border-color: #cf222e; background-color: #ffebe9; }}
+        .markdown-alert-caution .markdown-alert-title {{ color: #cf222e; }}
+        .markdown-alert-caution .octicon {{ fill: #cf222e; }}
     """
+
+
+def get_iee_css(theme: ThemeConfig) -> str:
+    """
+    Returns CSS for IEE header/footer styling matching reference images.
+
+    Args:
+        theme: Theme configuration.
+    """
+    return f"""
+        body {{ padding-top: 12px; }}
+
+        .iee-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid {theme.accent_color};
+        }}
+        .iee-header-left {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .iee-header-left img {{
+            height: 28px;
+            width: auto;
+        }}
+        .iee-header-title {{
+            font-size: 10px;
+            line-height: 1.3;
+        }}
+        .iee-header-title .inst-name {{
+            color: {theme.accent_color};
+            font-weight: 600;
+            font-size: 11px;
+        }}
+        .iee-header-title .univ-name {{
+            color: #666;
+        }}
+        .iee-header-right img {{
+            height: 26px;
+            width: auto;
+        }}
+
+        .iee-footer {{
+            margin-top: 25px;
+            padding-top: 8px;
+            border-top: 1px solid {theme.accent_color};
+            font-size: 9px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }}
+        .iee-footer-left {{
+            line-height: 1.5;
+        }}
+        .iee-footer-left .univ {{
+            color: {theme.accent_color};
+            font-weight: 600;
+        }}
+        .iee-footer-left .inst {{
+            color: {theme.accent_color};
+        }}
+        .iee-footer-right {{
+            text-align: right;
+            color: {theme.accent_color};
+            font-style: italic;
+            font-size: 8px;
+        }}
+    """
+
+
+def get_iee_header(
+        theme: ThemeConfig, logo_left_data: str, logo_right_data: str
+) -> str:
+    """
+    Returns HTML for IEE header matching reference image.
+
+    Args:
+        theme: Theme configuration.
+        logo_left_data: Base64 data URI for left logo.
+        logo_right_data: Base64 data URI for right logo.
+    """
+    return f"""
+<div class="iee-header">
+    <div class="iee-header-left">
+        <img src="{logo_left_data}" alt="IEE">
+        <div class="iee-header-title">
+            <div class="inst-name">{theme.name}</div>
+            <div class="univ-name">{theme.university}</div>
+        </div>
+    </div>
+    <div class="iee-header-right">
+        <img src="{logo_right_data}" alt="TU Graz">
+    </div>
+</div>
+"""
+
+
+def get_iee_footer(theme: ThemeConfig) -> str:
+    """
+    Returns HTML for IEE footer matching reference image.
+
+    Args:
+        theme: Theme configuration.
+    """
+    return f"""
+<div class="iee-footer">
+    <div class="iee-footer-left">
+        <div class="univ">{theme.university}</div>
+        <div class="inst">{theme.name}</div>
+        <div>{theme.address}</div>
+        <div>{theme.email} | {theme.website}</div>
+    </div>
+    <div class="iee-footer-right">{theme.slogan}</div>
+</div>
+"""
 
 
 def preprocess_github_alerts(markdown_content: str) -> str:
@@ -365,23 +386,17 @@ def preprocess_github_alerts(markdown_content: str) -> str:
     Returns:
         Markdown with alerts converted to HTML divs.
     """
-    alert_pattern = re.compile(
+    pattern = re.compile(
         r"^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n((?:>.*(?:\n|$))*)",
-        re.MULTILINE | re.IGNORECASE
+        re.MULTILINE | re.IGNORECASE,
     )
 
     def replace_alert(match: re.Match) -> str:
         alert_type = match.group(1).lower()
         content_block = match.group(2)
-
-        # Remove the '>' prefix from each line and clean up
-        clean_lines = []
-        for line in content_block.split("\n"):
-            # Remove leading '>' and optional space
-            cleaned = re.sub(r"^>\s?", "", line)
-            clean_lines.append(cleaned)
-
-        # Join and strip trailing whitespace
+        clean_lines = [
+            re.sub(r"^>\s?", "", line) for line in content_block.split("\n")
+        ]
         content = "\n".join(clean_lines).strip()
 
         icon = ALERT_ICONS.get(alert_type, "")
@@ -396,7 +411,7 @@ def preprocess_github_alerts(markdown_content: str) -> str:
 
 """
 
-    return alert_pattern.sub(replace_alert, markdown_content)
+    return pattern.sub(replace_alert, markdown_content)
 
 
 def convert_markdown_to_html(markdown_content: str) -> str:
@@ -427,61 +442,77 @@ def convert_markdown_to_html(markdown_content: str) -> str:
     return html_body
 
 
-def create_html_document(body_content: str) -> str:
+def create_html_document(
+        body: str,
+        theme: Optional[ThemeConfig] = None,
+        iee_style: bool = False,
+        script_dir: Optional[Path] = None,
+) -> str:
     """
-    Wraps HTML body content in a complete HTML document with styling.
+    Creates complete HTML document with optional IEE styling.
 
     Args:
-        body_content: HTML body content.
-
-    Returns:
-        Complete HTML document.
+        body: HTML body content.
+        theme: Theme configuration for IEE styling.
+        iee_style: Whether to apply IEE styling.
+        script_dir: Directory of the script for locating resources.
     """
-    css = get_github_css()
+    heading_color = theme.heading_line_color if theme else "#d1d9e0"
+    css = get_github_css(heading_color)
+    header, footer = "", ""
+
+    if iee_style and theme and script_dir:
+        css += get_iee_css(theme)
+        logo_left = load_image_as_base64(theme.logo_left, script_dir)
+        logo_right = load_image_as_base64(theme.logo_right, script_dir)
+        if logo_left and logo_right:
+            header = get_iee_header(theme, logo_left, logo_right)
+            footer = get_iee_footer(theme)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
-    <style>
-{css}
-    </style>
+    <style>{css}</style>
 </head>
 <body>
-{body_content}
+{header}
+{body}
+{footer}
 </body>
-</html>
-"""
+</html>"""
 
 
-def convert_and_style(input_file: str, temp_html_file: str) -> None:
+def convert_and_style(
+        input_file: str,
+        temp_html: str,
+        iee_style: bool = False,
+        theme: Optional[ThemeConfig] = None,
+        script_dir: Optional[Path] = None,
+) -> None:
     """
     Converts Markdown to styled HTML.
 
     Args:
         input_file: Path to input Markdown file.
-        temp_html_file: Path for temporary HTML output.
+        temp_html: Path for output temporary HTML file.
+        iee_style: Whether to apply IEE styling.
+        theme: Theme configuration for IEE styling.
+        script_dir: Directory of the script for locating resources.
     """
     print(f"Converting '{input_file}' to HTML...")
 
     # Read the Markdown file
     with open(input_file, "r", encoding="utf-8") as f:
-        markdown_content = f.read()
+        md_content = f.read()
 
-    # Preprocess GitHub alerts
-    processed_markdown = preprocess_github_alerts(markdown_content)
+    processed = preprocess_github_alerts(md_content)
+    html_body = convert_markdown_to_html(processed)
+    html_doc = create_html_document(html_body, theme, iee_style, script_dir)
 
-    # Convert to HTML
-    html_body = convert_markdown_to_html(processed_markdown)
-
-    # Create complete HTML document
-    html_document = create_html_document(html_body)
-
-    # Write the HTML file
-    with open(temp_html_file, "w", encoding="utf-8") as f:
-        f.write(html_document)
+    with open(temp_html, "w", encoding="utf-8") as f:
+        f.write(html_doc)
 
 
 def print_to_pdf(html_file: str, pdf_file: str) -> None:
@@ -502,11 +533,11 @@ def print_to_pdf(html_file: str, pdf_file: str) -> None:
 
         # Use proper file:// URL format
         file_path = os.path.abspath(html_file)
-        if os.name == "nt":  # Windows
-            file_url = f"file:///{file_path.replace(os.sep, '/')}"
-        else:  # Unix-like
-            file_url = f"file://{file_path}"
-
+        file_url = (
+            f"file:///{file_path.replace(os.sep, '/')}"
+            if os.name == "nt"
+            else f"file://{file_path}"
+        )
         page.goto(file_url)
 
         # Wait for fonts and styles to render
@@ -518,26 +549,34 @@ def print_to_pdf(html_file: str, pdf_file: str) -> None:
             print_background=True,
             display_header_footer=False,
             margin={
-                "top": "20mm",
-                "bottom": "20mm",
+                "top": "15mm",
+                "bottom": "15mm",
                 "left": "15mm",
-                "right": "15mm"
-            }
+                "right": "15mm",
+            },
         )
         browser.close()
 
 
 def main() -> None:
-    """Main entry point for the Markdown to PDF converter."""
+    """Main entry point."""
     parser = argparse.ArgumentParser(
         description="Convert Markdown to PDF with GitHub styling."
     )
     parser.add_argument("input", help="Input markdown file")
     parser.add_argument("output", nargs="?", help="Output PDF file (optional)")
+    parser.add_argument(
+        "--iee", action="store_true", help="Add IEE/TU Graz header and footer"
+    )
+    parser.add_argument(
+        "--theme", default="IEE", help="Theme name from themes.ini"
+    )
+    parser.add_argument("--config", default="themes.ini", help="Path to themes.ini config file")
     args = parser.parse_args()
 
-    input_path: str = args.input
-    output_path: str = args.output if args.output else f"{os.path.splitext(input_path)[0]}.pdf"
+    input_path = args.input
+    output_path = args.output or f"{os.path.splitext(input_path)[0]}.pdf"
+    script_dir = Path(__file__).parent
 
     if not os.path.exists(input_path):
         print(f"Error: '{input_path}' not found.")
@@ -545,12 +584,15 @@ def main() -> None:
 
     install_dependencies()
 
+    theme = ThemeConfig(args.theme, args.config) if args.iee else None
     temp_html = f"temp_{os.path.basename(input_path)}.html"
 
     try:
-        convert_and_style(input_path, temp_html)
+        convert_and_style(input_path, temp_html, args.iee, theme, script_dir)
         print_to_pdf(temp_html, output_path)
         print(f"✅ PDF created: {output_path}")
+        if args.iee:
+            print("   (with IEE styling)")
     finally:
         if os.path.exists(temp_html):
             os.remove(temp_html)
