@@ -4,3 +4,6 @@
 
 # Ignore VS Code project files
 .vscode/
+
+# Ignore macOS system attributes files
+.DS_Store
