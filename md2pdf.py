@@ -197,7 +197,9 @@ def get_github_css(heading_line_color: str = "#d1d9e0") -> str:
         ul {{ list-style-type: disc; }}
         ol {{ list-style-type: decimal; }}
         li {{ margin-top: 0.25em; }}
-        ul ul, ol ul {{ list-style-type: circle; margin-top: 0; margin-bottom: 0; }}
+        li > ul, li > ol {{ padding-left: 2em; margin-top: 0; margin-bottom: 0; }}
+        ul ul, ol ul {{ list-style-type: circle; }}
+        ul ul ul, ol ul ul, ul ol ul, ol ol ul {{ list-style-type: square; }}
 
         blockquote {{
             padding: 0 1em;
