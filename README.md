@@ -45,7 +45,7 @@ python md2pdf.py document.md --iee --theme IEE --config /path/to/themes.ini
 | `input` | Input markdown file (required)                               |
 | `output` | Output PDF file (optional, defaults to input name with .pdf) |
 | `--iee` | Add IEE/TU Graz institutional header and footer              |
-| `--theme` | Theme name from themes.ini (default: IEE)                    |
+| `--theme` | Theme name from themes.ini (default: Standard)               |
 | `--config` | Path to themes.ini config file (default: themes.ini)         |
 
 ## Configuration (themes.ini)
@@ -54,25 +54,24 @@ python md2pdf.py document.md --iee --theme IEE --config /path/to/themes.ini
 [DEFAULT]
 heading_line_color = #d1d9e0
 
+[Standard]
+# Standard theme with black accent
+accent_color = #000000
+...
+
 [IEE]
-name = Institute of Electricity Economics and Energy Innovation
-university = Graz University of Technology
-address = Inffeldgasse 18, 8010 Graz, Austria
-email = iee@tugraz.at
-website = www.iee.tugraz.at
-slogan = SCIENCE · PASSION · TECHNOLOGY
+# IEE theme with teal accent
 accent_color = #008080
-logo_left = Logo_IEE.png
-logo_right = Logo_TuGraz.png
+...
 ```
 
 ## IEE Styling
 
 When using the `--iee` flag, the PDF includes:
-- **Header**: IEE logo (left) + Institute name + TU Graz logo (right) with teal accent line
+- **Header**: IEE logo (left) + Institute name + TU Graz logo (right)
 - **Footer**: Contact information + TU Graz slogan "SCIENCE · PASSION · TECHNOLOGY"
-- **Accent color**: IEE teal (#008080) for header/footer lines
-- **Heading lines**: Original GitHub gray (not IEE color)
+- **Accent color**: Black (#000000) for Standard theme, teal (#008080) for IEE theme
+- **Heading lines**: GitHub gray (#d1d9e0)
 
 ## Supported Markdown Features
 
