@@ -374,6 +374,36 @@ def get_iee_footer(theme: ThemeConfig) -> str:
 """
 
 
+def normalize_list_indentation(markdown_content: str) -> str:
+    """
+    Normalizes 2-space list indentation to 4-space for Python markdown compatibility.
+
+    GitHub allows 2-space indentation for nested lists, but Python's markdown
+    library requires 4 spaces.
+
+    Args:
+        markdown_content: Raw Markdown text.
+
+    Returns:
+        Markdown with normalized list indentation.
+    """
+    lines = markdown_content.split('\n')
+    result = []
+
+    for line in lines:
+        # Match lines that start with spaces followed by a list marker (- or * or 1.)
+        match = re.match(r'^( +)([-*]|\d+\.)\s', line)
+        if match:
+            spaces = match.group(1)
+            # Convert 2-space indentation levels to 4-space
+            indent_level = len(spaces) // 2
+            new_indent = '    ' * indent_level
+            line = new_indent + line[len(spaces):]
+        result.append(line)
+
+    return '\n'.join(result)
+
+
 def preprocess_github_alerts(markdown_content: str) -> str:
     """
     Converts GitHub-style alerts to HTML placeholders before Markdown processing.
@@ -505,7 +535,8 @@ def convert_and_style(
     with open(input_file, "r", encoding="utf-8") as f:
         md_content = f.read()
 
-    processed = preprocess_github_alerts(md_content)
+    normalized = normalize_list_indentation(md_content)
+    processed = preprocess_github_alerts(normalized)
     html_body = convert_markdown_to_html(processed)
     html_doc = create_html_document(html_body, theme, script_dir)
 
