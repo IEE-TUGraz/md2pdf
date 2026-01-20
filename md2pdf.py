@@ -447,7 +447,6 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 def create_html_document(
         body: str,
         theme: Optional[ThemeConfig] = None,
-        iee_style: bool = False,
         script_dir: Optional[Path] = None,
 ) -> str:
     """
@@ -456,14 +455,13 @@ def create_html_document(
     Args:
         body: HTML body content.
         theme: Theme configuration for IEE styling.
-        iee_style: Whether to apply IEE styling.
         script_dir: Directory of the script for locating resources.
     """
     heading_color = theme.heading_line_color if theme else "#d1d9e0"
     css = get_github_css(heading_color)
     header, footer = "", ""
 
-    if iee_style and theme and script_dir:
+    if theme and script_dir:
         css += get_iee_css(theme)
         logo_left = load_image_as_base64(theme.logo_left, script_dir)
         logo_right = load_image_as_base64(theme.logo_right, script_dir)
@@ -489,7 +487,6 @@ def create_html_document(
 def convert_and_style(
         input_file: str,
         temp_html: str,
-        iee_style: bool = False,
         theme: Optional[ThemeConfig] = None,
         script_dir: Optional[Path] = None,
 ) -> None:
@@ -499,7 +496,6 @@ def convert_and_style(
     Args:
         input_file: Path to input Markdown file.
         temp_html: Path for output temporary HTML file.
-        iee_style: Whether to apply IEE styling.
         theme: Theme configuration for IEE styling.
         script_dir: Directory of the script for locating resources.
     """
@@ -511,7 +507,7 @@ def convert_and_style(
 
     processed = preprocess_github_alerts(md_content)
     html_body = convert_markdown_to_html(processed)
-    html_doc = create_html_document(html_body, theme, iee_style, script_dir)
+    html_doc = create_html_document(html_body, theme, script_dir)
 
     with open(temp_html, "w", encoding="utf-8") as f:
         f.write(html_doc)
@@ -590,7 +586,7 @@ def main() -> None:
     temp_html = f"temp_{os.path.basename(input_path)}.html"
 
     try:
-        convert_and_style(input_path, temp_html, args.iee, theme, script_dir)
+        convert_and_style(input_path, temp_html, theme, script_dir)
         print_to_pdf(temp_html, output_path)
         print(f"✅ PDF created: {output_path}")
         if args.iee:
